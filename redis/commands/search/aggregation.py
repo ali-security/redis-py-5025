@@ -27,9 +27,15 @@ class Reducer:
     NAME = None
 
     def __init__(self, *args: str) -> None:
+<<<<<<< fixing_mypy_errors
         self._args: tuple[str, ...] = args
         self._field: Optional[str] = None
         self._alias: Optional[str] = None
+=======
+        self._args = args
+        self._field = None
+        self._alias = None
+>>>>>>> master
 
     def alias(self, alias: str) -> "Reducer":
         """
@@ -105,6 +111,7 @@ class AggregateRequest:
         All member methods (except `build_args()`)
         return the object itself, making them useful for chaining.
         """
+<<<<<<< fixing_mypy_errors
         self._query: str = query
         self._aggregateplan: List[str] = []
         self._loadfields: List[str] = []
@@ -116,6 +123,19 @@ class AggregateRequest:
         self._dialect: int = DEFAULT_DIALECT
         self._add_scores: bool = False
         self._scorer: str = "TFIDF"
+=======
+        self._query = query
+        self._aggregateplan = []
+        self._loadfields = []
+        self._loadall = False
+        self._max = 0
+        self._with_schema = False
+        self._verbatim = False
+        self._cursor = []
+        self._dialect = DEFAULT_DIALECT
+        self._add_scores = False
+        self._scorer = "TFIDF"
+>>>>>>> master
 
     def load(self, *fields: str) -> "AggregateRequest":
         """
