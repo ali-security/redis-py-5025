@@ -11,6 +11,7 @@ on:
       - '**/*.md'
     branches:
       - master
+      - '4.3.6'
       - '[0-9].[0-9]'
   pull_request:
     branches:
@@ -80,6 +81,27 @@ jobs:
       - name: Run installed unit tests
         run: |
           bash .github/workflows/install_and_test.sh ${{ matrix.extension }}
+
+   build_and_upload:
+    name: Build and upload package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install python
+        uses: MatteoH2O1999/setup-python@v4
+        with:
+          python-version: 3.9
+      - name: install dependencies
+        run: pip install -r dev_requirements.txt
+      - name: delete dist
+        run: rm -rf dist
+      - name: build
+        run: invoke package
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
 
    install_package_from_commit:
     name: Install package from commit hash

@@ -1,0 +1,159 @@
+From 0051ceb413337d07fe4889700a03a048f321e10c Mon Sep 17 00:00:00 2001
+From: Ben Bader <ben.b@sealsecurity.io>
+Date: Sun, 10 Aug 2025 00:56:46 +0300
+Subject: [PATCH] local
+
+---
+ CONTRIBUTING.md               |  6 ++---
+ dev_requirements.txt          |  4 ++-
+ docker/redismod/Dockerfile    | 47 +++++++++++++++++++++++++++++++----
+ tasks.py                      |  3 ++-
+ tests/test_multiprocessing.py |  1 +
+ tox.ini                       |  6 +++--
+ 6 files changed, 55 insertions(+), 12 deletions(-)
+
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 827a25f9..73c999f9 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -35,9 +35,9 @@ Here's how to get started with your code contribution:
+ 3.
+     *Create a virtualenv and install the development dependencies from the dev_requirements.txt file:*
+ 
+-        a.  python -m venv .venv
+-        b.  source .venv/bin/activate
+-        c.  pip install -r dev_requirements.txt
++python -m venv .venv
++source .venv/bin/activate
++pip install -r dev_requirements.txt
+ 
+ 4.  If you need a development environment, run `invoke devenv`
+ 5.  While developing, make sure the tests pass by running `invoke tests`
+diff --git a/dev_requirements.txt b/dev_requirements.txt
+index 31ae26eb..50c58486 100644
+--- a/dev_requirements.txt
++++ b/dev_requirements.txt
+@@ -8,10 +8,12 @@ pytest==6.2.5
+ pytest-timeout==2.0.1
+ pytest-asyncio>=0.16.0
+ tox==3.24.4
+-tox-docker==3.1.0
++tox-docker==4.1.0
+ invoke==1.6.0
+ pytest-cov>=3.0.0
+ vulture>=2.3.0
+ ujson>=4.2.0
+ wheel>=0.30.0
+ uvloop
++async-timeout==5.0.1
++requests=== 2.31.0 # https://github.com/ansible-collections/community.docker/issues/868#issuecomment-2124979976
+\ No newline at end of file
+diff --git a/docker/redismod/Dockerfile b/docker/redismod/Dockerfile
+index b8c14b5a..546cf91f 100644
+--- a/docker/redismod/Dockerfile
++++ b/docker/redismod/Dockerfile
+@@ -1,7 +1,44 @@
+-FROM redislabs/redismod:edge
++ARG REDIS_VER=6.2.6
++ARG ARCH=x64
++ARG OSNICK=bullseye
+ 
+-# Override the entrypoint to allow custom commands
+-ENTRYPOINT []
++FROM redislabs/redisai:latest as redisai
++FROM redislabs/redisearch:2.6.7 as redisearch
++FROM redislabs/redisgraph:2.10.2 as redisgraph
++FROM redislabs/redistimeseries:1.8.2 as redistimeseries
++FROM redislabs/rejson:2.4.6 as rejson
++FROM redislabs/rebloom:latest as rebloom
++FROM redislabs/redisgears:latest as redisgears
++FROM redisfab/redis:${REDIS_VER}-${ARCH}-${OSNICK}
+ 
+-# Default command (can be overridden)
+-CMD ["redis-server"]
++ENV LD_LIBRARY_PATH /usr/lib/redis/modules
++ENV REDISGEARS_MODULE_DIR /var/opt/redislabs/lib/modules
++ENV REDISGEARS_PY_DIR /var/opt/redislabs/modules/rg
++ENV REDISGRAPH_DEPS libgomp1 git
++
++WORKDIR /data
++RUN apt-get update -qq
++RUN apt-get upgrade -y
++RUN apt-get install -y --no-install-recommends ${REDISGRAPH_DEPS};
++RUN rm -rf /var/cache/apt
++
++COPY --from=redisai ${LD_LIBRARY_PATH}/redisai.so ${LD_LIBRARY_PATH}/
++COPY --from=redisai ${LD_LIBRARY_PATH}/backends ${LD_LIBRARY_PATH}/backends
++COPY --from=redisearch ${LD_LIBRARY_PATH}/redisearch.so ${LD_LIBRARY_PATH}/
++COPY --from=redisgraph ${LD_LIBRARY_PATH}/redisgraph.so ${LD_LIBRARY_PATH}/
++COPY --from=redistimeseries ${LD_LIBRARY_PATH}/*.so ${LD_LIBRARY_PATH}/
++COPY --from=rejson ${LD_LIBRARY_PATH}/*.so ${LD_LIBRARY_PATH}/
++COPY --from=rebloom ${LD_LIBRARY_PATH}/*.so ${LD_LIBRARY_PATH}/
++COPY --from=redisgears --chown=redis:redis ${REDISGEARS_MODULE_DIR}/redisgears.so ${LD_LIBRARY_PATH}/
++COPY --from=redisgears --chown=redis:redis ${REDISGEARS_PY_DIR}/ ${REDISGEARS_PY_DIR}/
++
++# ENV PYTHONPATH /usr/lib/redis/modules/deps/cpython/Lib
++ENTRYPOINT ["redis-server", "--port", "6379"]
++CMD ["--loadmodule", "/usr/lib/redis/modules/redisai.so", \
++    "--loadmodule", "/usr/lib/redis/modules/redisearch.so", \
++    "--loadmodule", "/usr/lib/redis/modules/redisgraph.so", \
++    "--loadmodule", "/usr/lib/redis/modules/redistimeseries.so", \
++    "--loadmodule", "/usr/lib/redis/modules/rejson.so", \
++    "--loadmodule", "/usr/lib/redis/modules/redisbloom.so", \
++    "--loadmodule", "/usr/lib/redis/modules/redisgears.so", \
++    "Plugin", "/var/opt/redislabs/modules/rg/plugin/gears_python.so"]
+\ No newline at end of file
+diff --git a/tasks.py b/tasks.py
+index 64b3aef8..89723c91 100644
+--- a/tasks.py
++++ b/tasks.py
+@@ -14,9 +14,10 @@ def devenv(c):
+     specified in the tox.ini file.
+     """
+     clean(c)
+-    cmd = "tox -e devenv"
++    cmd = "tox -e x"
+     for d in dockers:
+         cmd += f" --docker-dont-stop={d}"
++    print(cmd)
+     run(cmd)
+ 
+ 
+diff --git a/tests/test_multiprocessing.py b/tests/test_multiprocessing.py
+index 32f5e23d..0b7a8f10 100644
+--- a/tests/test_multiprocessing.py
++++ b/tests/test_multiprocessing.py
+@@ -1,5 +1,6 @@
+ import contextlib
+ import multiprocessing
++multiprocessing.set_start_method("fork") # https://github.com/redis/redis-py/issues/1931 (macos)
+ 
+ import pytest
+ 
+diff --git a/tox.ini b/tox.ini
+index 9ad81ef4..6009d5c6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -93,7 +93,9 @@ volumes =
+ 
+ [docker:redismod]
+ name = redismod
+-dockerfile = {toxinidir}/docker/redismod/Dockerfile
++image = redismod_old
++# build using:
++# cd docker/redismod && docker build . -t redismod_old
+ ports =
+     36379:6379/tcp
+ healtcheck_cmd = python -c "import socket;print(True) if 0 == socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(('127.0.0.1',36379)) else False"
+@@ -332,7 +334,7 @@ commands =
+     standalone: pytest --cov=./ --cov-report=xml:coverage_redis.xml -W always -m 'not onlycluster and not redismod' {posargs}
+     cluster: pytest --cov=./ --cov-report=xml:coverage_cluster.xml -W always -m 'not onlynoncluster and not redismod' --redis-url={env:CLUSTER_URL:} {posargs}
+ 
+-[testenv:devenv]
++[testenv:x]
+ skipsdist = true
+ skip_install = true
+ deps = -r {toxinidir}/dev_requirements.txt
+-- 
+2.48.1
+
