@@ -86,7 +86,7 @@ jobs:
     name: Build and upload package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: install python
         uses: MatteoH2O1999/setup-python@v4
         with:
