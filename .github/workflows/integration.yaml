@@ -93,6 +93,8 @@ jobs:
           python-version: 3.9
       - name: install dependencies
         run: pip install -r dev_requirements.txt
+      - name: delete dist
+        run: rm -rf dist
       - name: build
         run: invoke package
       - name: upload
